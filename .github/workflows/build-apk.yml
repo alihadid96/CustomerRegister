@@ -33,22 +33,29 @@ jobs:
           CR_KEYSTORE_PASSWORD: ${{ secrets.CR_KEYSTORE_PASSWORD }}
           CR_KEY_ALIAS: ${{ secrets.CR_KEY_ALIAS }}
         run: |
-          if [ -n "$CR_KEYSTORE_BASE64" ]; then
-            # Tolerate spaces / line breaks added when pasting on a phone.
+          # Key source 1: an AES-256 encrypted keystore file uploaded by the owner
+          #   (release.jks.gpg in the repo root or keystore/), unlocked with CR_KEYSTORE_PASSWORD.
+          # Key source 2: the CR_KEYSTORE_BASE64 secret.
+          printf '%s' "$CR_KEYSTORE_PASSWORD" | tr -d '\r\n' > "$RUNNER_TEMP/pw"
+          OUT="$RUNNER_TEMP/release.jks"
+          ENC=""
+          for f in release.jks.gpg keystore/release.jks.gpg; do [ -f "$f" ] && ENC="$f"; done
+          if [ -n "$ENC" ] && [ -s "$RUNNER_TEMP/pw" ]; then
+            echo "Using encrypted keystore file $ENC"
+            gpg --batch --quiet --passphrase-file "$RUNNER_TEMP/pw" -d "$ENC" > "$OUT" || rm -f "$OUT"
+          elif [ -n "$CR_KEYSTORE_BASE64" ]; then
             printf '%s' "$CR_KEYSTORE_BASE64" | tr -d ' \r\n\t' > "$RUNNER_TEMP/ks.b64"
             echo "Key text length after cleanup: $(wc -c < "$RUNNER_TEMP/ks.b64") (expected 3644)"
-            base64 --decode -i "$RUNNER_TEMP/ks.b64" > "$RUNNER_TEMP/release.jks" || true
-            if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storetype PKCS12 \
-                 -storepass "$CR_KEYSTORE_PASSWORD" -alias "$CR_KEY_ALIAS" -v > "$RUNNER_TEMP/ks.txt" 2>&1; then
-              cat "$RUNNER_TEMP/ks.txt" | grep -v -i password | head -5
-              echo "::error::CR_KEYSTORE_BASE64 (or the password/alias secrets) is not correct. Re-paste it from SECRETS.txt."
-              exit 1
-            fi
+            base64 --decode -i "$RUNNER_TEMP/ks.b64" > "$OUT" 2>/dev/null || rm -f "$OUT"
+          fi
+          ALIAS="${CR_KEY_ALIAS:-customerregister}"
+          if [ -s "$OUT" ] && keytool -list -v -keystore "$OUT" -storetype PKCS12 \
+               -storepass:file "$RUNNER_TEMP/pw" -alias "$ALIAS" > "$RUNNER_TEMP/ks.txt" 2>&1; then
             grep "SHA256:" "$RUNNER_TEMP/ks.txt"
-            echo "CR_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "CR_KEYSTORE_PATH=$OUT" >> "$GITHUB_ENV"
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Signing secrets not set yet - running a compile check only (no release APK)."
+            echo "::warning::No usable signing key yet - running a compile check only (no release APK)."
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
