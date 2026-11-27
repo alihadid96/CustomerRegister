@@ -36,7 +36,7 @@ jobs:
           if [ -n "$CR_KEYSTORE_BASE64" ]; then
             # Tolerate spaces / line breaks added when pasting on a phone.
             printf '%s' "$CR_KEYSTORE_BASE64" | tr -d ' \r\n\t' > "$RUNNER_TEMP/ks.b64"
-            echo "Key text length after cleanup: $(wc -c < "$RUNNER_TEMP/ks.b64") (expected 3576)"
+            echo "Key text length after cleanup: $(wc -c < "$RUNNER_TEMP/ks.b64") (expected 3644)"
             base64 --decode -i "$RUNNER_TEMP/ks.b64" > "$RUNNER_TEMP/release.jks" || true
             if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storetype PKCS12 \
                  -storepass "$CR_KEYSTORE_PASSWORD" -alias "$CR_KEY_ALIAS" -v > "$RUNNER_TEMP/ks.txt" 2>&1; then
